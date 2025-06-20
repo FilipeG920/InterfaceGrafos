@@ -1,5 +1,9 @@
 import collections
 import heapq
+import sys
+
+sys.setrecursionlimit(2000)
+
 
 # --- Configurações do Grafo ---
 # Define o número de nós (vértices) que o grafo terá. Os nós serão numerados de 0 a CONST_N-1.
@@ -15,11 +19,11 @@ def generate_graph_edges():
     if CONST_N == 5:
         edges_data = [
             (0, 1, 4), (1, 0, 4),  
-            (0, 2, 2), (2, 0, 2),  
-            (1, 2, 5), (2, 1, 5),  
-            (1, 3, 10), (3, 1, 10),
+            (0, 2, 2), (2, 0, 2),
+            #(1, 2, 5), (2, 1, 5),  
+            #(1, 3, 10), (3, 1, 10),
             (2, 3, 3), (3, 2, 3),
-            (2, 4, 7), (4, 2, 7),
+            #(2, 4, 7), (4, 2, 7),
             (3, 4, 1), (4, 3, 1)
         ]
     elif CONST_N == 6:
@@ -52,18 +56,16 @@ def generate_directed_graph_edges():
             (1, 3, 10),
             (2, 4, 7),
             (3, 2, 3),
-            (4, 3, 1)
+            #(4, 3, 1)
         ]
     elif CONST_N == 6:
         edges_data = [
-            (0, 1, 7),
-            (0, 2, 9),
-            (1, 2, 10),
-            (2, 5, 2),
-            (3, 1, 15),
-            (3, 4, 6),
-            (4, 5, 9),
-            (5, 0, 14)
+            (5, 2, 0),
+            (5, 0, 0),
+            (4, 0, 0),
+            (4, 1, 0),
+            (2, 3, 0),
+            (3, 1, 0)
         ]
     else:
         print(f"AVISO: CONST_N = {CONST_N} não tem um grafo direcionado pré-definido. Usando grafo vazio.")
@@ -98,6 +100,8 @@ def get_all_nodes(edges):
     for u, v, _ in edges:
         nodes.add(u)
         nodes.add(v)
+    for i in range(CONST_N):
+        nodes.add(i)
     return nodes
 
 def build_undirected_adj_list(edges, use_weights=True):
@@ -125,6 +129,8 @@ def build_undirected_adj_list(edges, use_weights=True):
     # Garante que todos os nós de 0 a CONST_N-1 existam no dicionário, mesmo que não tenham arestas (nós isolados).
     all_defined_nodes = set(range(CONST_N))
     for node in all_defined_nodes:
+        if node not in adj:
+            adj[node] = []
         adj[node].sort() # Ordena a lista de vizinhos para uma exibição consistente.
        
     # Retorna o dicionário final, ordenado pelas chaves (nós) para exibição.
@@ -145,6 +151,8 @@ def build_directed_adj_list(edges, use_weights=True):
     # Garante que todos os nós definidos existam no dicionário.
     all_defined_nodes = set(range(CONST_N))
     for node in all_defined_nodes:
+        if node not in adj:
+            adj[node] = []
         adj[node].sort()
        
     return collections.OrderedDict(sorted(adj.items()))
@@ -415,6 +423,229 @@ def reverse_delete_mst(unique_undirected_edges, all_graph_nodes):
     final_weight = sum(w for _, _, w in mst_final_edges)
     return mst_final_edges, final_weight
 
+# 1. DETECÇÃO DE CICLOS
+def has_cycle_undirected_util(u, visited, parent, adj):
+    """
+    Função auxiliar recursiva (baseada em DFS) para detectar ciclos em um subgrafo.
+    :param u: O vértice atual a ser visitado.
+    :param visited: Um conjunto (set) de vértices já visitados.
+    :param parent: O nó pai do vértice 'u' na árvore DFS, para evitar confundir a aresta de volta ao pai com um ciclo.
+    :param adj: A lista de adjacência do grafo.
+    :return: True se um ciclo for encontrado, False caso contrário.
+    """
+    visited.add(u)
+    for v in adj.get(u, []):
+        if v not in visited:
+            if has_cycle_undirected_util(v, visited, u, adj):
+                return True
+        elif v != parent:
+            return True
+    return False
+
+def has_cycle_undirected(adj):
+    """
+    Verifica se um grafo não dirigido contém um ciclo.
+    :param adj: A lista de adjacência do grafo.
+    :return: True se o grafo tiver um ciclo, False caso contrário.
+    """
+    visited = set()
+    for u in list(adj.keys()):
+        if u not in visited:
+            if has_cycle_undirected_util(u, visited, -1, adj):
+                return True
+    return False
+
+def has_cycle_directed_util(u, visited, recursion_stack, adj):
+    visited.add(u)
+    recursion_stack.add(u)
+    for v in adj.get(u, []):
+        if v not in visited:
+            if has_cycle_directed_util(v, visited, recursion_stack, adj):
+                return True
+        elif v in recursion_stack:
+            return True
+    recursion_stack.remove(u)
+    return False
+
+def has_cycle_directed(adj):
+    visited = set()
+    recursion_stack = set()
+    for u in list(adj.keys()):
+        if u not in visited:
+            if has_cycle_directed_util(u, visited, recursion_stack, adj):
+                return True
+    return False
+
+# 2. ORDENAÇÃO TOPOLÓGICA
+def topological_sort_util(u, visited, stack, adj):
+    visited.add(u)
+    for v in adj.get(u, []):
+        if v not in visited:
+            topological_sort_util(v, visited, stack, adj)
+    stack.append(u)
+
+def topological_sort(adj):
+    if has_cycle_directed(adj):
+        return None # Ordenação topológica não existe para grafos com ciclos
+    
+    visited = set()
+    stack = []
+    for u in list(adj.keys()):
+        if u not in visited:
+            topological_sort_util(u, visited, stack, adj)
+            
+    return stack[::-1] # Retorna a pilha invertida
+
+# 3 e 4. PONTOS DE ARTICULAÇÃO E BICONEXÃO
+class ArticulationPoints:
+    def __init__(self, adj):
+        self.adj = adj
+        self.nodes = list(adj.keys())
+        self.visited = set()
+        self.tin = {} # Tempo de descoberta
+        self.low = {} # Low-link value
+        self.timer = 0
+        self.articulation_points = set()
+        self.parent = {node: -1 for node in self.nodes}
+
+    def find_aps(self):
+        for node in self.nodes:
+            if node not in self.visited:
+                self.dfs(node)
+        return sorted(list(self.articulation_points))
+
+    def dfs(self, u):
+        self.visited.add(u)
+        self.tin[u] = self.low[u] = self.timer
+        self.timer += 1
+        children = 0
+        
+        for v in self.adj.get(u, []):
+            if v == self.parent[u]:
+                continue
+            if v in self.visited:
+                self.low[u] = min(self.low[u], self.tin[v])
+            else:
+                children += 1
+                self.parent[v] = u
+                self.dfs(v)
+                self.low[u] = min(self.low[u], self.low[v])
+                if self.parent[u] != -1 and self.low[v] >= self.tin[u]:
+                    self.articulation_points.add(u)
+                if self.parent[u] == -1 and children > 1:
+                    self.articulation_points.add(u)
+
+def is_biconnected(adj, articulation_points):
+    if not adj or len(adj.keys()) <= 1:
+        return True
+    
+    # Um grafo é biconexo se é conexo e não tem pontos de articulação.
+    # A verificação de conexão é implícita se o algoritmo de articulação percorrer todos os nós.
+    # Primeiro, verificamos se há nós. Um grafo com 0 ou 1 nó é biconexo.
+    nodes = list(adj.keys())
+    if len(nodes) <= 2:
+        return True # Por definição, grafos com 0, 1 ou 2 nós são biconexos.
+        
+    if articulation_points:
+        return False
+    
+    # Adicionalmente, verificar se o grafo é conexo.
+    if not nodes: return True
+    visited = set()
+    q = collections.deque([nodes[0]])
+    visited.add(nodes[0])
+    count = 0
+    while q:
+        u = q.popleft()
+        count += 1
+        for v in adj.get(u,[]):
+            if v not in visited:
+                visited.add(v)
+                q.append(v)
+    
+    return count == len(nodes)
+
+# 5. ÁRVORE BINÁRIA DE BUSCA
+class TreeNode:
+    def __init__(self, key):
+        self.key = key
+        self.left = None
+        self.right = None
+
+class BinarySearchTree:
+    def __init__(self):
+        self.root = None
+
+    def insert(self, key):
+        self.root = self._insert_recursive(self.root, key)
+
+    def _insert_recursive(self, node, key):
+        if node is None:
+            return TreeNode(key)
+        if key < node.key:
+            node.left = self._insert_recursive(node.left, key)
+        elif key > node.key:
+            node.right = self._insert_recursive(node.right, key)
+        return node
+
+    def delete(self, key):
+        self.root = self._delete_recursive(self.root, key)
+
+    def _delete_recursive(self, node, key):
+        if node is None: return node
+        if key < node.key:
+            node.left = self._delete_recursive(node.left, key)
+        elif key > node.key:
+            node.right = self._delete_recursive(node.right, key)
+        else:
+            if node.left is None: return node.right
+            elif node.right is None: return node.left
+            
+            # Nó com dois filhos: Pega o sucessor em-ordem (menor na sub-árvore direita)
+            temp = self._min_value_node(node.right)
+            node.key = temp.key
+            node.right = self._delete_recursive(node.right, temp.key)
+        return node
+        
+    def _min_value_node(self, node):
+        current = node
+        while(current.left is not None):
+            current = current.left
+        return current
+
+    def pre_order(self):
+        result = []
+        self._pre_order_recursive(self.root, result)
+        return result
+        
+    def _pre_order_recursive(self, node, result):
+        if node:
+            result.append(node.key)
+            self._pre_order_recursive(node.left, result)
+            self._pre_order_recursive(node.right, result)
+
+    def in_order(self):
+        result = []
+        self._in_order_recursive(self.root, result)
+        return result
+
+    def _in_order_recursive(self, node, result):
+        if node:
+            self._in_order_recursive(node.left, result)
+            result.append(node.key)
+            self._in_order_recursive(node.right, result)
+
+    def post_order(self):
+        result = []
+        self._post_order_recursive(self.root, result)
+        return result
+
+    def _post_order_recursive(self, node, result):
+        if node:
+            self._post_order_recursive(node.left, result)
+            self._post_order_recursive(node.right, result)
+            result.append(node.key)
+
 def opcao1():
     print("\n--- Opção 1: Lista de Adjacência (Não Direcionado) ---")
     raw_edges = generate_graph_edges()
@@ -603,10 +834,112 @@ def opcao10():
         print(f"  ({u} - {v}, peso: {w})")
     print("-" * 40)
 
+def opcao11():
+    print("\n--- Opção 11: Detecção de Ciclos em Grafo Não Dirigido ---")
+    raw_edges = generate_graph_edges()
+    adj = build_undirected_adj_list(raw_edges, use_weights=False)
+    if has_cycle_undirected(adj):
+        print("Resultado: Foi detectado um ciclo no grafo não dirigido.")
+    else:
+        print("Resultado: Não há ciclos no grafo não dirigido.")
+    print("-" * 40)
+
+def opcao12():
+    print("\n--- Opção 12: Detecção de Ciclos em Grafo Dirigido ---")
+    raw_edges = generate_directed_graph_edges()
+    adj = build_directed_adj_list(raw_edges, use_weights=False)
+    if has_cycle_directed(adj):
+        print("Resultado: Foi detectado um ciclo no grafo dirigido.")
+    else:
+        print("Resultado: Não há ciclos no grafo dirigido.")
+    print("-" * 40)
+    
+def opcao13():
+    print("\n--- Opção 13: Ordenação Topológica (Grafo Dirigido) ---")
+    print("Nota: Usando o grafo para CONST_N=6, que é um DAG.")
+    # Forçando CONST_N para 6 para garantir um DAG
+    global CONST_N
+    original_const_n = CONST_N
+    CONST_N = 6
+    
+    raw_edges = generate_directed_graph_edges()
+    adj = build_directed_adj_list(raw_edges, use_weights=False)
+    
+    sorted_nodes = topological_sort(adj)
+    
+    if sorted_nodes is None:
+        print("Não foi possível realizar a ordenação topológica, pois o grafo contém um ciclo.")
+    else:
+        print("Ordem Topológica:", ' -> '.join(map(str, sorted_nodes)))
+        
+    CONST_N = original_const_n # Restaura o valor original
+    print("-" * 40)
+    
+def opcao14():
+    print("\n--- Opção 14: Pontos de Articulação e Biconexão (Grafo Não Dirigido) ---")
+    raw_edges = generate_graph_edges()
+    adj = build_undirected_adj_list(raw_edges, use_weights=False)
+    
+    ap_finder = ArticulationPoints(adj)
+    articulation_points = ap_finder.find_aps()
+    
+    if not articulation_points:
+        print("Pontos de Articulação: Nenhum encontrado.")
+    else:
+        print("Pontos de Articulação encontrados:", ", ".join(map(str, articulation_points)))
+        
+    if is_biconnected(adj, articulation_points):
+        print("Verificação de Biconexão: O grafo é biconexo.")
+    else:
+        print("Verificação de Biconexão: O grafo NÃO é biconexo.")
+    print("-" * 40)
+    
+def opcao15(): #5 1 4 9 8 2 10
+    print("\n--- Opção 15: Operações com Árvore Binária de Busca ---")
+    bst = BinarySearchTree()
+    
+    while True:
+        try:
+            nums_str = input("Digite os números para inserir na árvore, separados por espaço (ex: 50 30 70 20): ")
+            if not nums_str:
+                print("Nenhum número inserido.")
+                break
+            nums = [int(n) for n in nums_str.split()]
+            for num in nums:
+                bst.insert(num)
+            print("Números inseridos com sucesso.")
+            break
+        except ValueError:
+            print("Entrada inválida. Por favor, digite apenas números inteiros separados por espaço.")
+
+    if bst.root is None:
+        print("A árvore está vazia. Saindo da opção.")
+        print("-" * 40)
+        return
+        
+    while True:
+        print("\nPercursos da Árvore:")
+        print(f"  Pré-ordem (Raiz, Esquerda, Direita): {bst.pre_order()}")
+        print(f"  Em-ordem (Esquerda, Raiz, Direita):  {bst.in_order()}")
+        print(f"  Pós-ordem (Esquerda, Direita, Raiz): {bst.post_order()}")
+        
+        del_choice = input("\nDeseja remover um nó? Digite o número ou 'n' para sair: ")
+        if del_choice.lower() == 'n':
+            break
+        try:
+            key_to_delete = int(del_choice)
+            print(f"Removendo o nó {key_to_delete}...")
+            bst.delete(key_to_delete)
+        except ValueError:
+            print("Entrada inválida.")
+            
+    print("-" * 40)
+
 # --- Estrutura do Menu Principal ---
 opcoes = {
     1: opcao1, 2: opcao2, 3: opcao3, 4: opcao4, 5: opcao5,
-    6: opcao6, 7: opcao7, 8: opcao8, 9: opcao9, 10: opcao10
+    6: opcao6, 7: opcao7, 8: opcao8, 9: opcao9, 10: opcao10,
+    11: opcao11, 12: opcao12, 13: opcao13, 14: opcao14, 15: opcao15
 }
 
 menu_texto = [
@@ -619,7 +952,14 @@ menu_texto = [
     "7. Árvore geradora mínima - Kruskal",
     "8. Árvore geradora mínima - Prim",
     "9. Árvore geradora mínima - Apaga Reverso",
-    "10. Ordenação de arestas por peso (Crescente e decrescente)"
+    "10. Ordenação de arestas por peso (Crescente e decrescente)",
+    "--- Novas Funcionalidades ---",
+    "11. Detecção de Ciclos (Não Dirigido)",
+    "12. Detecção de Ciclos (Dirigido)",
+    "13. Ordenação Topológica (Dirigido)",
+    "14. Pontos de Articulação e Biconexão (Não Dirigido)",
+    "15. Árvore Binária de Busca"
+
 ]
 
 if __name__ == '__main__':
